@@ -1,0 +1,156 @@
+from Crypto.PublicKey import RSA
+from Crypto.Signature import pkcs1_15
+from Crypto.Hash import SHA256
+import base64
+from Crypto.Cipher import AES
+from Crypto.Random import get_random_bytes
+from Crypto.Util.Padding import pad, unpad
+from hashlib import sha256
+from random import getrandbits
+
+# AES
+def encrypt_AES(plain_text, key):
+    key = key[:16]
+    iv = get_random_bytes(16)
+    cipher = AES.new(key, AES.MODE_CBC, iv)
+    padded = pad(plain_text.encode(), AES.block_size)
+    encrypted = cipher.encrypt(padded)
+    return base64.b64encode(iv + encrypted).decode()
+
+def decrypt_AES(enc_text, key):
+    try:
+        key = key[:16]
+        raw = base64.b64decode(enc_text.strip())
+        iv = raw[:16]
+        cipher = AES.new(key, AES.MODE_CBC, iv)
+        decrypted = cipher.decrypt(raw[16:])
+        return unpad(decrypted, AES.block_size).decode()
+    except Exception as e:
+        return f"❌ Decryption failed: {str(e)}"
+
+# RSA
+def generate_rsa_keys():
+    key = RSA.generate(2048)
+    return key, key.publickey()
+
+def sign_data(private_key, data):
+    h = SHA256.new(data.encode())
+    signature = pkcs1_15.new(private_key).sign(h)
+    return base64.b64encode(signature).decode()
+
+def verify_signature(public_key, data, signature):
+    try:
+        h = SHA256.new(data.encode())
+        pkcs1_15.new(public_key).verify(h, base64.b64decode(signature))
+        return True
+    except Exception:
+        return False
+
+# DH
+def simulate_dh_key_exchange():
+    print("\n🤝 Diffie-Hellman Key Exchange")
+    print("Default prime (p = 23), base (g = 5)")
+
+    p = 23
+    g = 5
+
+    choice = input("Do you want to enter your own private keys? (y/n): ").strip().lower()
+
+    if choice == 'y':
+        try:
+            a = int(input("Enter sender's private key (a): "))
+            b = int(input("Enter receiver's private key (b): "))
+        except ValueError:
+            print("❌ Invalid input. Using random keys instead.")
+            a = getrandbits(8)
+            b = getrandbits(8)
+    else:
+        a = getrandbits(8)
+        b = getrandbits(8)
+
+    A = pow(g, a, p)
+    B = pow(g, b, p)
+    shared_secret_sender = pow(B, a, p)
+    shared_secret_receiver = pow(A, b, p)
+
+    print(f"\n🔐 Sender Private Key (a): {a}")
+    print(f"🔐 Receiver Private Key (b): {b}")
+    print(f"📤 Sender Public Key (A = g^a mod p): {A}")
+    print(f"📥 Receiver Public Key (B = g^b mod p): {B}")
+    print(f"\n✅ Shared Secret at Sender Side: {shared_secret_sender}")
+    print(f"✅ Shared Secret at Receiver Side: {shared_secret_receiver}")
+
+    if shared_secret_sender == shared_secret_receiver:
+        print("🟢 Key Exchange Successful. Shared AES key will be derived.")
+    else:
+        print("🔴 Mismatch in shared secret. Something went wrong.")
+
+    aes_key = sha256(str(shared_secret_sender).encode()).digest()[:16]
+    print(f"✅ AES Key (derived from DH): {aes_key.hex()}")
+
+    return str(shared_secret_sender), aes_key
+
+def menu():
+    print("\n===== Secure Digital Transactions Menu =====")
+    print("1. Simulate DH Key Exchange")
+    print("2. Encrypt Data with AES")
+    print("3. Decrypt Data with AES")
+    print("4. Sign Data using RSA")
+    print("5. Verify Digital Signature")
+    print("6. Exit")
+    return input("Select an option (1-6): ").strip()
+
+# === MAIN ===
+if __name__ == "__main__":
+    print("🔐 Welcome to Secure Digital Transaction System")
+
+    shared_secret = ""
+    aes_key = ""
+    encrypted_data = ""
+    rsa_private, rsa_public = generate_rsa_keys()
+    signature = ""
+
+    while True:
+        choice = menu()
+
+        if choice == '1':
+            shared_secret, aes_key = simulate_dh_key_exchange()
+
+        elif choice == '2':
+            if aes_key == "":
+                print("⚠️ You need to run DH key exchange first!")
+                continue
+            data = input("Enter data to encrypt: ")
+            encrypted_data = encrypt_AES(data, aes_key)
+            print(f"🔒 Encrypted Data (Base64): {encrypted_data}")
+
+        elif choice == '3':
+            if aes_key == "":
+                print("⚠️ No AES key available. Run DH key exchange first.")
+                continue
+            encrypted_data_input = input("Enter encrypted data (Base64): ").strip()
+            decrypted_data = decrypt_AES(encrypted_data_input, aes_key)
+            print(f"🔓 Decrypted Data: {decrypted_data}")
+
+        elif choice == '4':
+            if not encrypted_data:
+                encrypted_data = input("Enter encrypted data to sign (Base64): ").strip()
+            else:
+                print(f"🔒 Data to Sign (Base64): {encrypted_data}")
+            signature = sign_data(rsa_private, encrypted_data.strip())
+            print(f"🖊️  Signature: {signature}")
+
+        elif choice == '5':
+            if not encrypted_data or not signature:
+                print("⚠️ Please encrypt and sign some data first!")
+                continue
+            print(f"🔍 Verifying Signature for Encrypted Data: {encrypted_data}")
+            verified = verify_signature(rsa_public, encrypted_data.strip(), signature.strip())
+            print("✅ Signature Valid!" if verified else "❌ Signature Invalid.")
+
+        elif choice == '6':
+            print("👋 Exiting Secure Transaction System.")
+            break
+
+        else:
+            print("❗ Invalid option. Please choose 1-6.")
